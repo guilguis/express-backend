@@ -117,26 +117,22 @@ const authController = {
     logout: async(req, res) => {
         try {
             if (process.env.SESSIONAUTH) {
-                if (process.env.TWO_FACTOR_ENABLED) {
-                    const { userId } = req.session
-                    const user = await UserModel.findOne({_id: userId, active: true}, ['-password', '-salt', ])
-    
-                    user.config.twoFactor.confirmed = false
-                    await user.save()
-                }
+                const { userId } = req.session
+                const user = await UserModel.findOne({_id: userId, active: true}, ['-password', '-salt', ])
+
+                user.config.twoFactor.confirmed = false
+                await user.save()
                 
                 req.session.destroy(() => {
                     res.status(200).send('user logged out')
                 })
             } else {
-                if (process.env.TWO_FACTOR_ENABLED) {
-                    const { token } = req.cookies
-                    const userId = jwt.verify(token, process.env.SECRET_KEY).id
-                    
-                    var user = await UserModel.findOne({_id: userId, active: true}, ['-password', '-salt', ])
-                    user.config.twoFactor.confirmed = false
-                    await user.save()
-                }
+                const { token } = req.cookies
+                const userId = jwt.verify(token, process.env.SECRET_KEY).id
+                
+                var user = await UserModel.findOne({_id: userId, active: true}, ['-password', '-salt', ])
+                user.config.twoFactor.confirmed = false
+                await user.save()
 
                 res.clearCookie('token')
                 res.status(200).send('user logged out')
