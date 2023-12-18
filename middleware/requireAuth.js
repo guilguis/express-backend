@@ -3,15 +3,15 @@ const { User: UserModel } = require('../models/User')
 
 const requireAuth = async(req, res, next) => {
     try {
-        if (process.env.SESSIONAUTH) {
-            requireAuthSession(req, res, next)
-        } else {
-            requireAuthToken(req, res, next)
+        if(requireAuthSession(req, res, next) || requireAuthToken(req, res, next)) {
+            next()
+        } else  {
+            res.status(401).send('Not Authenticated')
         }
     } catch (error) {
         console.log(error)
         res.clearCookie('token')
-        res.status(401).send(error);
+        res.status(401).send('Not Authenticated');
     }
 }
 
@@ -23,7 +23,7 @@ const requireAuthToken = (req, res, next) => {
     delete user.iat
     delete user.exp
     req.user = user
-    next()
+    return true
 }
 
 const requireAuthSession = async(req, res, next) => {
@@ -31,10 +31,9 @@ const requireAuthSession = async(req, res, next) => {
     const user = await UserModel.findOne({_id: userId, active: true}, ['-password', '-salt', ]).populate('parties').populate('company')
     
     if (user) {
-        req.user = user
-        next()
+       return  true
     } else {
-        res.status(401).send('Not Authenticated');
+        return false
     }
 }
 

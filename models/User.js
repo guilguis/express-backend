@@ -62,6 +62,7 @@ const userSchema = new Schema({
             },
             qrCode: {
                 type: String,
+                default:''
             },
         },
         email: {

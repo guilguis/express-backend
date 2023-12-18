@@ -6,17 +6,21 @@ const transporter = require('../email/config')
 const { User: UserModel } = require('../models/User')
 
 const persistLogin = (req, res, user) => {
-    if (process.env.SESSIONAUTH) {
-        req.session.userId = user.id
-    } else {
-        user = user.toObject()
-        delete user.password
-        delete user.salt
-        const token = jwt.sign(user, process.env.SECRET_KEY, { expiresIn: parseInt(process.env.JWTEXPTIME) })
-        res.cookie('token', token, {
-            httpOnly: true,
-        })
-    }
+    // Persist Session
+    req.session.userId = user.id
+    
+    // Persist JWT
+    user = user.toObject()
+    delete user.password
+    delete user.salt
+    const token = jwt.sign(user, process.env.SECRET_KEY, { expiresIn: parseInt(process.env.JWTEXPTIME) })
+    const refreshToken = jwt.sign(user, process.env.SECRET_KEY, { expiresIn: process.env.JWTREFRESHTIME })
+    
+    res
+    .cookie('refreshToken', refreshToken, { httpOnly: true, sameSite: 'strict'})
+    .cookie('accessToken', token, { httpOnly: true, sameSite: 'strict'})
+    
+    return user
 }
 
 const validateUser = (user, password) => {
@@ -32,12 +36,6 @@ const validateUser = (user, password) => {
     if(!user.active) {
         isValid = false
         validationError = 'Inactive User'
-        return {isValid, validationError}
-    }
-
-    if(!user.config.email.verified) {
-        isValid = false
-        validationError = 'Unverified Email'
         return {isValid, validationError}
     }
 
@@ -58,11 +56,6 @@ const authController = {
                 email: req.body.email,
                 password: req.body.password,
             }
-            
-            // var existingUser = await UserModel.findOne({email: user.email})
-            // if(existingUser){
-            //     return res.status(403).json({msg: 'Email already in use.'})
-            // }
 
             var newUser = await UserModel.create(user)
             await newUser.setPassword(newUser.password)
@@ -102,11 +95,17 @@ const authController = {
             var user = await UserModel.findOne({email: email}).populate('company')
 
             const { isValid, validationError } = validateUser(user, password)
-            if (!isValid) return res.status(401).json({msg: validationError})
+            if (!isValid){
+                if(validationError === 'Unverified Email'){
+                    return res.status(308).send(validationError)
+                } else {
+                    return res.status(401).send(validationError)
+                }
+            }
 
-            persistLogin(req, res, user)
+            user = persistLogin(req, res, user)
 
-            res.status(200).send('user logged in.')
+            res.status(200).json({user: user,  msg:'user logged in'})
 
         } catch (error) {
             console.log(error)
@@ -116,27 +115,23 @@ const authController = {
 
     logout: async(req, res) => {
         try {
-            if (process.env.SESSIONAUTH) {
-                const { userId } = req.session
-                const user = await UserModel.findOne({_id: userId, active: true}, ['-password', '-salt', ])
+            // Get userID
+            const { accessToken } = req.cookies
+            const userId = req.session.userId ? req.session.userId : jwt.verify(accessToken, process.env.SECRET_KEY) ? jwt.verify(accessToken, process.env.SECRET_KEY).user.id : null
 
-                user.config.twoFactor.confirmed = false
-                await user.save()
-                
-                req.session.destroy(() => {
-                    res.status(200).send('user logged out')
-                })
-            } else {
-                const { token } = req.cookies
-                const userId = jwt.verify(token, process.env.SECRET_KEY).id
-                
-                var user = await UserModel.findOne({_id: userId, active: true}, ['-password', '-salt', ])
-                user.config.twoFactor.confirmed = false
-                await user.save()
+            // Logout Two Factor
+            const user = await UserModel.findOne({_id: userId, active: true}, ['-password', '-salt', ])
+            user.config.twoFactor.confirmed = false
+            await user.save()
+            
+            // End  Session
+            req.session.destroy()
+            
+            // Clear JWT
+            res.clearCookie('accessToken')
+            res.clearCookie('refreshToken')
 
-                res.clearCookie('token')
-                res.status(200).send('user logged out')
-            }
+            res.status(200).send('user logged out')
 
         } catch (error) {
             console.log(error)
@@ -174,7 +169,8 @@ const authController = {
     
             user.config.email.verified = true
             user.save()
-            res.status(200).json({msg: 'Email verified'})
+            
+            res.status(200).send({msg: 'Email verified'})
         } catch (error) {
             console.log(error)
             res.status(403).json({msg: error._message})
@@ -191,8 +187,8 @@ const authController = {
 
             
             // Generate Verification Token and send email with token in the link.
-            const token = user.generateEmailToken()
-            const validationLink = `http://localhost:8000/validateEmail/${token}`
+            const token = await user.generateEmailToken()
+            const validationLink = `http://localhost:3000/email-confirmed/${token}`
             const mailData = {
                 from: process.env.EMAIL_USERNAME,  // sender address
                 to: email,   // list of receivers
@@ -222,16 +218,15 @@ const authController = {
     setupTwoFactor: async(req, res) => {
         try {
             var user = await UserModel.findById(req.params.id)
+
+            if(!_.isEmpty(user.config.twoFactor.secret))
+                return res.send({ qrCode: user.config.twoFactor.qrCode });
+
             var secret = speakeasy.generateSecret({ length: 20 })
             user.config.twoFactor.secret = secret.base32
             // Generate a QR code for the user to scan
-            QRCode.toDataURL(secret.otpauth_url, (err, image_data) => {
-                user.config.twoFactor.qrCode = image_data
-                if (err) {
-                    console.error(err);
-                    return res.status(500).send('Internal Server Error');
-                }
-            })
+            var dataURI = await QRCode.toDataURL(secret.otpauth_url)
+            user.config.twoFactor.qrCode = dataURI
             await user.save()
             // Send the QR code to the user
             res.send({ qrCode: user.config.twoFactor.qrCode });
@@ -258,9 +253,29 @@ const authController = {
             user.config.twoFactor.confirmed = true
             await user.save()
 
-            persistLogin(req, res, user)
+            user = persistLogin(req, res, user)
             
-            res.send('Login successful');
+            res.status(200).json({user: user,  msg:'user logged in'})
+        } catch (error) {
+            console.log(error)
+            res.status(403).json({msg: error._message})
+        }
+    },
+
+    refreshToken: async(req, res) => {
+        try {
+            const { refreshToken } = req.cookies;
+            if (!refreshToken) {
+              return res.status(401).send('Access Denied. No refresh token provided.');
+            }
+
+            const decoded = jwt.verify(refreshToken, process.env.SECRET_KEY);
+            delete decoded.iat
+            delete decoded.exp
+            const accessToken = jwt.sign({ user: decoded }, process.env.SECRET_KEY, { expiresIn: process.env.JWTREFRESHTIME });
+
+            res.cookie('accessToken', accessToken, { httpOnly: true, sameSite: 'strict'})
+            res.status(200).json({user: decoded,  msg:'user logged in'})
         } catch (error) {
             console.log(error)
             res.status(403).json({msg: error._message})
