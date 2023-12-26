@@ -120,15 +120,18 @@ const userController = {
     },
 
     update: async(req, res) => {
-
         try {
-            var response = await UserModel.findByIdAndUpdate(req.params.id, req.body, {new: true})
+            if(req.file) {
+                req.body.picture = req.file.path.replace(/\\/g, "/").replace(process.env.PROFILE_MEDIA_ROOT, '')
+            }
+
+            var user = await UserModel.findByIdAndUpdate(req.params.id, req.body, {new:true}) //findByIdAndUpdate
             
-            if(!response) {
+            if(!user) {
                 res.status(404).json({msg: "Não encontrado"})
                 return
             }
-            res.json({response, msg:'updated'})
+            res.json({user, msg:'updated'})
         } catch (error) {
             console.log(error)
             res.status(403).json({msg: error._message})

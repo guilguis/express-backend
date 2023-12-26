@@ -15,12 +15,13 @@ const conn = require('./db/conn');
 conn()
 
 // Middlewares
-app.use(cors({credentials:true, origin: "http://localhost:3000"}))
+app.use(cors({credentials:true, origin:"http://localhost:3000"}))
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, process.env.EVENT_MEDIA_ROOT)));
+app.use(express.static(path.join(__dirname, process.env.PROFILE_MEDIA_ROOT)));
 // Session
 app.use(session({
     secret: process.env.SECRET_KEY,

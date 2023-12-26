@@ -1,12 +1,17 @@
 const jwt = require('jsonwebtoken')
 const { User: UserModel } = require('../models/User')
+const { isNull } = require('lodash')
 
 const requireAuth = async(req, res, next) => {
     try {
-        if(requireAuthSession(req, res, next) || requireAuthToken(req, res, next)) {
-            next()
+        const [ isAuthSession, sessionUser ] =  await requireAuthSession(req)
+        const [ isAuthToken, tokenUser ] =  requireAuthToken(req)
+        
+        if(isAuthSession || isAuthToken) {
+            req.user = !isNull(sessionUser) ? sessionUser : !isNull(tokenUser) ? tokenUser : null
+            return next()
         } else  {
-            res.status(401).send('Not Authenticated')
+            return res.status(401).send('Not Authenticated')
         }
     } catch (error) {
         console.log(error)
@@ -15,26 +20,26 @@ const requireAuth = async(req, res, next) => {
     }
 }
 
-const requireAuthToken = (req, res, next) => {
-    const { token } = req.cookies
+const requireAuthToken = (req) => {
+    const { accessToken } = req.cookies
+    try {
+        const user = jwt.verify(accessToken, process.env.SECRET_KEY).user
+        return [ true, user ]
+    } catch (error) {
+        return [ false, null ]
+    }
 
-    const user = jwt.verify(token, process.env.SECRET_KEY)
-
-    delete user.iat
-    delete user.exp
-    req.user = user
-    return true
 }
 
-const requireAuthSession = async(req, res, next) => {
+const requireAuthSession = async(req) => {
     const { userId } = req.session
-    const user = await UserModel.findOne({_id: userId, active: true}, ['-password', '-salt', ]).populate('parties').populate('company')
+    const user = await UserModel.findOne({_id: userId, active: true}, ['-password', '-salt', ]).populate('company')
     
     if (user) {
-       return  true
-    } else {
-        return false
+        return [ true, user ]
     }
+    
+    return [ false, null ]
 }
 
 const requireTwoFactor = (req, res, next) => {
