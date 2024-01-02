@@ -4,6 +4,8 @@ const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const { User: UserModel, userSchema } = require('../models/User');
 const { transporter } = require('../email/config');
+const authController = require('./authController');
+const { persistLogin } = require('./authUtils');
 
 const userController = {
     
@@ -126,11 +128,13 @@ const userController = {
             }
 
             var user = await UserModel.findByIdAndUpdate(req.params.id, req.body, {new:true}) //findByIdAndUpdate
-            
+
             if(!user) {
                 res.status(404).json({msg: "Não encontrado"})
                 return
             }
+            user = persistLogin(req, res, user)
+            
             res.json({user, msg:'updated'})
         } catch (error) {
             console.log(error)

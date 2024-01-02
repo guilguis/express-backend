@@ -11,6 +11,7 @@ router.route('/validateEmail/:token').get((req, res) => authController.validateE
 router.route('/sendValidationEmail/:email', requireAuth).get((req, res) => authController.sendEmailValidation(req, res))
 
 router.route('/setupTwoFactor/:id', requireAuth).get((req, res) => authController.setupTwoFactor(req, res))
+router.route('/setupTwoFactor/:id/reset', requireAuth).get((req, res) => authController.resetTwoFactor(req, res))
 router.route('/validateTwoFactor/:id', requireAuth).post((req, res) => authController.validateTwoFactor(req, res))
 
 router.route('/refresh').get((req, res) => authController.refreshToken(req, res))

@@ -3,7 +3,7 @@ const multer = require('multer')
 // Set up storage for uploaded files
 const partyStorage = multer.diskStorage({
     destination: (req, file, cb) => {
-      cb(null, process.env.PROFILE_MEDIA_ROOT);
+      cb(null, process.env.EVENT_MEDIA_ROOT);
     },
     filename: (req, file, cb) => {
       cb(null, Date.now() + '-' + file.originalname);
@@ -12,7 +12,7 @@ const partyStorage = multer.diskStorage({
 
   const profileStorage = multer.diskStorage({
     destination: (req, file, cb) => {
-      cb(null, process.env.EVENT_MEDIA_ROOT);
+      cb(null, process.env.PROFILE_MEDIA_ROOT);
     },
     filename: (req, file, cb) => {
       cb(null, Date.now() + '-' + file.originalname);

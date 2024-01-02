@@ -3,49 +3,8 @@ const jwt = require('jsonwebtoken')
 const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const transporter = require('../email/config')
-const { User: UserModel } = require('../models/User')
-
-const persistLogin = (req, res, user) => {
-    // Persist Session
-    req.session.userId = user.id
-    
-    // Persist JWT
-    user = user.toObject()
-    delete user.password
-    delete user.salt
-    const token = jwt.sign(user, process.env.SECRET_KEY, { expiresIn: parseInt(process.env.JWTEXPTIME) })
-    const refreshToken = jwt.sign(user, process.env.SECRET_KEY, { expiresIn: process.env.JWTREFRESHTIME })
-    
-    res
-    .cookie('refreshToken', refreshToken, { httpOnly: true, sameSite: 'strict'})
-    .cookie('accessToken', token, { httpOnly: true, sameSite: 'strict'})
-    
-    return user
-}
-
-const validateUser = (user, password) => {
-    var isValid = true
-    var validationError = null
-
-    if (!user) {
-        isValid = false
-        validationError = 'Invalid User'
-        return {isValid, validationError}
-    }
-    
-    if(!user.active) {
-        isValid = false
-        validationError = 'Inactive User'
-        return {isValid, validationError}
-    }
-
-    if (!user.validatePassword(password)) {
-        isValid = false
-        validationError = 'Invalid Password'
-        return {isValid, validationError}
-    }
-    return {isValid, validationError}
-}
+const { User: UserModel } = require('../models/User');
+const { persistLogin, validateUser } = require('./authUtils');
 
 const authController = {
 
@@ -230,6 +189,24 @@ const authController = {
             await user.save()
             // Send the QR code to the user
             res.send({ qrCode: user.config.twoFactor.qrCode });
+        } catch (error) {
+            console.log(error)
+            res.status(403).json({msg: error._message})
+        }
+    },
+
+    resetTwoFactor: async(req, res) => {
+        try {
+            var user = await UserModel.findById(req.params.id)
+
+            var secret = speakeasy.generateSecret({ length: 20 })
+            user.config.twoFactor.secret = secret.base32
+            // Generate a QR code for the user to scan
+            var dataURI = await QRCode.toDataURL(secret.otpauth_url)
+            user.config.twoFactor.qrCode = dataURI
+            await user.save()
+            // Send the QR code to the user
+            res.send({ user });
         } catch (error) {
             console.log(error)
             res.status(403).json({msg: error._message})
