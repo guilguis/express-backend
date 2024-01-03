@@ -70,7 +70,20 @@ const companyController = {
         
         // execute query
         try {
-            const response = await CompanyModel.find(filters, {}, {...paginationOptions}).sort(sortBy)
+            // const response = await CompanyModel.find(filters, {}, {...paginationOptions}).sort(sortBy)
+            const query = await CompanyModel.aggregate(
+              [{  $facet: {
+                    'data': [
+                    { $match: filters},
+                    { $skip: paginationOptions.skip },
+                    { $limit: paginationOptions.limit },
+                    ],
+                    'count': [
+                    { $count: 'count' }
+                    ]
+                }}]
+            )
+            const response = {results: query[0].data, count:query[0].count[0].count}
             return res.json(response)
         } catch (error) {
             console.log(error)
